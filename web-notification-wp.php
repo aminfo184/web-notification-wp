@@ -75,6 +75,7 @@ function wnw_load_plugin_files()
 {
     // Load include files
     $includes = [
+        'simple-vapid.php',
         'api-routes.php',
         'core-functions.php',
         'background-processor.php', // فایل جدید

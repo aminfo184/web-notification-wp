@@ -1,8 +1,7 @@
 <?php
 
-
-use Minishlink\WebPush\WebPush;
-use Minishlink\WebPush\Subscription;
+// Load simple VAPID implementation
+require_once WNW_PATH . 'includes/simple-vapid.php';
 
 /**
  * ثبت API routes برای پلاگین
@@ -108,6 +107,13 @@ add_action('rest_api_init', function () {
             ]
         ],
     ]);
+
+    // API تست برای دیباگ
+    register_rest_route('wnw/v1', '/test', [
+        'methods' => 'GET',
+        'callback' => 'wnw_api_test',
+        'permission_callback' => '__return_true',
+    ]);
 });
 
 /**
@@ -116,15 +122,26 @@ add_action('rest_api_init', function () {
 function wnw_api_permission_check(WP_REST_Request $request) {
     // برای تست و استفاده آسان، مجوز ساده
     return true;
+}
+
+/**
+ * API تست
+ */
+function wnw_api_test(WP_REST_Request $request) {
+    global $wpdb;
     
-    // در صورت نیاز به امنیت بیشتر، از کد زیر استفاده کنید:
-    /*
-    $nonce = $request->get_header('X-WP-Nonce');
-    if (wp_verify_nonce($nonce, 'wp_rest')) {
-        return true;
-    }
-    return current_user_can('manage_options');
-    */
+    $settings = get_option('wnw_settings', []);
+    $subscribers_count = $wpdb->get_var(
+        "SELECT COUNT(*) FROM {$wpdb->prefix}wn_subscriptions WHERE status = 'active'"
+    );
+    
+    return new WP_REST_Response([
+        'success' => true,
+        'message' => 'API working correctly',
+        'settings_configured' => !empty($settings['public_key']) && !empty($settings['private_key']),
+        'subscribers_count' => $subscribers_count,
+        'timestamp' => current_time('mysql')
+    ], 200);
 }
 
 /**
@@ -153,7 +170,7 @@ function wnw_api_send_to_user(WP_REST_Request $request) {
     }
     
     // ارسال نوتیفیکیشن
-    $result = wnw_send_instant_notification([$user_id], $notification_data);
+    $result = wnw_send_instant_notification_simple([$user_id], $notification_data);
     
     return new WP_REST_Response($result, $result['success'] ? 200 : 400);
 }
@@ -192,7 +209,7 @@ function wnw_api_send_to_users(WP_REST_Request $request) {
     }
     
     // ارسال نوتیفیکیشن
-    $result = wnw_send_instant_notification($user_ids, $notification_data);
+    $result = wnw_send_instant_notification_simple($user_ids, $notification_data);
     
     return new WP_REST_Response($result, $result['success'] ? 200 : 400);
 }
@@ -221,7 +238,7 @@ function wnw_api_send_custom(WP_REST_Request $request) {
     ];
     
     // ارسال نوتیفیکیشن
-    $result = wnw_send_instant_notification($user_ids, $notification_data);
+    $result = wnw_send_instant_notification_simple($user_ids, $notification_data);
     
     return new WP_REST_Response($result, $result['success'] ? 200 : 400);
 }
@@ -264,9 +281,9 @@ function wnw_get_all_subscribed_users() {
 }
 
 /**
- * ارسال فوری نوتیفیکیشن
+ * ارسال فوری نوتیفیکیشن با کلاس ساده
  */
-function wnw_send_instant_notification($user_ids, $notification_data) {
+function wnw_send_instant_notification_simple($user_ids, $notification_data) {
     global $wpdb;
     
     if (empty($user_ids)) {
@@ -278,18 +295,11 @@ function wnw_send_instant_notification($user_ids, $notification_data) {
     
     // تنظیمات VAPID
     $settings = get_option('wnw_settings', []);
-    $auth = [
-        'VAPID' => [
-            'subject' => $settings['email'] ?? get_option('admin_email'),
-            'publicKey' => $settings['public_key'] ?? '',
-            'privateKey' => $settings['private_key'] ?? '',
-        ],
-    ];
     
-    if (empty($auth['VAPID']['publicKey']) || empty($auth['VAPID']['privateKey'])) {
+    if (empty($settings['public_key']) || empty($settings['private_key'])) {
         return [
             'success' => false,
-            'message' => 'کلیدهای VAPID تنظیم نشده‌اند.'
+            'message' => 'کلیدهای VAPID تنظیم نشده‌اند. لطفاً به تنظیمات پلاگین بروید و کلیدها را تولید کنید.'
         ];
     }
     
@@ -308,10 +318,6 @@ function wnw_send_instant_notification($user_ids, $notification_data) {
         ];
     }
     
-    // آماده‌سازی WebPush
-    $webPush = new WebPush($auth);
-    $webPush->setReuseVAPIDHeaders(true);
-    
     // آماده‌سازی payload
     $payload = json_encode([
         'title' => $notification_data['title'],
@@ -321,69 +327,79 @@ function wnw_send_instant_notification($user_ids, $notification_data) {
         'image' => $notification_data['image'],
     ]);
     
-    // افزودن نوتیفیکیشن‌ها به صف ارسال
-    foreach ($subscriptions as $subscription) {
-        $webpush_subscription = Subscription::create([
-            'endpoint' => $subscription->endpoint,
-            'publicKey' => $subscription->public_key,
-            'authToken' => $subscription->auth_token,
-        ]);
-        
-        $webPush->queueNotification(
-            $webpush_subscription,
-            $payload,
-            [
-                'TTL' => $settings['ttl'] ?? 2419200,
-                'urgency' => 'high' // ارسال فوری
-            ]
+    // ایجاد WebPush client
+    try {
+        $webPush = new WNW_Simple_WebPush(
+            $settings['public_key'],
+            $settings['private_key'],
+            $settings['email'] ?? get_option('admin_email')
         );
-    }
-    
-    // ارسال نوتیفیکیشن‌ها
-    $reports = $webPush->flush();
-    
-    // پردازش نتایج
-    $results = [
-        'success' => true,
-        'total_subscriptions' => count($subscriptions),
-        'sent' => 0,
-        'failed' => 0,
-        'details' => []
-    ];
-    
-    foreach ($reports as $report) {
-        $endpoint = $report->getEndpoint();
-        $subscription_info = null;
         
-        foreach ($subscriptions as $sub) {
-            if ($sub->endpoint === $endpoint) {
-                $subscription_info = $sub;
-                break;
-            }
+        // آماده‌سازی notifications
+        $notifications = [];
+        foreach ($subscriptions as $subscription) {
+            $notifications[] = [
+                'endpoint' => $subscription->endpoint,
+                'payload' => $payload,
+                'userPublicKey' => $subscription->public_key,
+                'userAuthToken' => $subscription->auth_token
+            ];
         }
         
-        $status_message = $report->isSuccess() ? 'موفق' : 'ناموفق: ' . $report->getReason();
-        $results['details'][] = [
-            'user_id' => $subscription_info ? $subscription_info->user_id : 'نامشخص',
-            'endpoint' => substr($endpoint, 0, 40) . '...',
-            'status' => $status_message
+        // ارسال نوتیفیکیشن‌ها
+        $results = $webPush->sendNotifications($notifications);
+        
+        // پردازش نتایج
+        $total = count($notifications);
+        $sent = 0;
+        $failed = 0;
+        $details = [];
+        
+        foreach ($results as $result) {
+            $subscription_info = null;
+            foreach ($subscriptions as $sub) {
+                if ($sub->endpoint === $result['endpoint']) {
+                    $subscription_info = $sub;
+                    break;
+                }
+            }
+            
+            if ($result['result']['success']) {
+                $sent++;
+                $status = 'موفق';
+            } else {
+                $failed++;
+                $status = 'ناموفق: ' . ($result['result']['error'] ?: 'HTTP ' . $result['result']['httpCode']);
+                
+                // به‌روزرسانی اشتراک‌های منقضی شده
+                if ($result['result']['httpCode'] == 410 && $subscription_info) {
+                    $wpdb->update(
+                        $wpdb->prefix . 'wn_subscriptions',
+                        ['status' => 'expired'],
+                        ['id' => $subscription_info->id]
+                    );
+                }
+            }
+            
+            $details[] = [
+                'user_id' => $subscription_info ? $subscription_info->user_id : 'نامشخص',
+                'endpoint' => substr($result['endpoint'], 0, 40) . '...',
+                'status' => $status
+            ];
+        }
+        
+        return [
+            'success' => true,
+            'total_subscriptions' => $total,
+            'sent' => $sent,
+            'failed' => $failed,
+            'details' => $details
         ];
         
-        if ($report->isSuccess()) {
-            $results['sent']++;
-        } else {
-            $results['failed']++;
-            
-            // به‌روزرسانی اشتراک‌های منقضی شده
-            if ($report->isSubscriptionExpired() && $subscription_info) {
-                $wpdb->update(
-                    $wpdb->prefix . 'wn_subscriptions',
-                    ['status' => 'expired'],
-                    ['id' => $subscription_info->id]
-                );
-            }
-        }
+    } catch (Exception $e) {
+        return [
+            'success' => false,
+            'message' => 'خطا در ارسال: ' . $e->getMessage()
+        ];
     }
-    
-    return $results;
 }

@@ -50,16 +50,12 @@ function wnw_generate_vapid_keys_ajax() {
         return;
     }
     
-    // بررسی وجود کلاس VAPID
-    if (!class_exists(\Minishlink\WebPush\VAPID::class)) {
-        echo 'hi';
-        wp_send_json_error('کلاس VAPID یافت نشد. مطمئن شوید پکیج نصب شده است.');
-        return;
-    }
+    // Load simple VAPID class
+    require_once WNW_PATH . 'includes/simple-vapid.php';
     
     try {
-        // ساخت کلیدهای جدید
-        $keys = \Minishlink\WebPush\VAPID::createVapidKeys();
+        // ساخت کلیدهای جدید با کلاس ساده
+        $keys = WNW_Simple_VAPID::createVapidKeys();
         
         // ذخیره در تنظیمات
         $settings = get_option('wnw_settings', []);

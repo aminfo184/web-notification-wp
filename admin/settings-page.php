@@ -76,12 +76,11 @@ function wnw_ajax_handle_settings_actions() {
  * این تابع دیگر یک AJAX handler مستقیم نیست.
  */
 function wnw_ajax_generate_keys_logic() {
-    if (!class_exists('\Minishlink\WebPush\VAPID')) {
-        wp_send_json_error(['message' => 'کتابخانه WebPush یافت نشد.']);
-    }
+    // Load simple VAPID class
+    require_once WNW_PATH . 'includes/simple-vapid.php';
 
     try {
-        $keys = \Minishlink\WebPush\VAPID::createVapidKeys();
+        $keys = WNW_Simple_VAPID::createVapidKeys();
         
         $options = get_option('wnw_settings', []);
         $options['public_key'] = $keys['publicKey'];
