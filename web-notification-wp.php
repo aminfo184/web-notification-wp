@@ -40,9 +40,10 @@ function wnw_plugin_activate()
     require_once WNW_PATH . 'includes/db-schema.php';
     wnw_create_tables();
 
-    if (!wp_next_scheduled('wnw_process_queue_hook')) {
-        wp_schedule_event(time(), 'every_minute', 'wnw_process_queue_hook');
-    }
+    // حذف cron قدیمی و استفاده از سیستم جدید
+    // if (!wp_next_scheduled('wnw_process_queue_hook')) {
+    //     wp_schedule_event(time(), 'every_minute', 'wnw_process_queue_hook');
+    // }
 
     require_once WNW_PATH . 'includes/core-functions.php';
     wnw_flush_rewrite_rules_on_activate();
@@ -53,10 +54,17 @@ function wnw_plugin_activate()
  */
 function wnw_plugin_deactivate()
 {
+    // پاک کردن همه cron jobs مربوط به پلاگین
     $timestamp = wp_next_scheduled('wnw_process_queue_hook');
     if ($timestamp) {
         wp_unschedule_event($timestamp, 'wnw_process_queue_hook');
     }
+    
+    wp_clear_scheduled_hook('wnw_background_process_step');
+    
+    // متوقف کردن پردازش پس‌زمینه
+    update_option('wnw_process_status', 'stopped');
+    
     flush_rewrite_rules();
 }
 
@@ -69,7 +77,8 @@ function wnw_load_plugin_files()
     $includes = [
         'api-routes.php',
         'core-functions.php',
-        'cron-handler.php',
+        'background-processor.php', // فایل جدید
+        'cron-handler.php', // نگه داری برای سازگاری
         'functions.php',
         'settings.php',
         'subscription-handler.php',
