@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧪 Web Push API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background: #d4edda; border-color: #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border-color: #f5c6cb; color: #721c24; }
+        .warning { background: #fff3cd; border-color: #ffeaa7; color: #856404; }
+        button { padding: 10px 15px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-warning { background: #ffc107; color: black; }
+        textarea { width: 100%; height: 100px; margin: 10px 0; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 5px; overflow-x: auto; }
+        .status { font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Web Push API Test Tool</h1>
+        
+        <!-- API Status Check -->
+        <div class="test-section">
+            <h3>📡 API Status Check</h3>
+            <button class="btn-primary" onclick="checkAPIStatus()">Check API Status</button>
+            <div id="api-status-result"></div>
+        </div>
+
+        <!-- Browser Support Check -->
+        <div class="test-section">
+            <h3>🌐 Browser Support</h3>
+            <div id="browser-support">
+                <p>Loading browser support information...</p>
+            </div>
+            <button class="btn-primary" onclick="requestNotificationPermission()">Request Permission</button>
+        </div>
+
+        <!-- Service Worker Status -->
+        <div class="test-section">
+            <h3>⚙️ Service Worker Status</h3>
+            <button class="btn-primary" onclick="checkServiceWorker()">Check Service Worker</button>
+            <div id="sw-status-result"></div>
+        </div>
+
+        <!-- Send Test Notification -->
+        <div class="test-section">
+            <h3>🚀 Send Test Notification</h3>
+            <div>
+                <label>Title:</label><br>
+                <input type="text" id="test-title" value="🧪 Test Notification" style="width: 100%; padding: 5px;">
+            </div>
+            <div>
+                <label>Message:</label><br>
+                <input type="text" id="test-message" value="This is a test message sent via API" style="width: 100%; padding: 5px;">
+            </div>
+            <div>
+                <label>URL (optional):</label><br>
+                <input type="text" id="test-url" placeholder="https://example.com" style="width: 100%; padding: 5px;">
+            </div>
+            <br>
+            <button class="btn-success" onclick="sendTestNotification()">Send to All Users</button>
+            <button class="btn-warning" onclick="sendTestToCurrentUser()">Send to Current User</button>
+            <div id="send-result"></div>
+        </div>
+
+        <!-- Debug Information -->
+        <div class="test-section">
+            <h3>🔍 Debug Information</h3>
+            <button class="btn-primary" onclick="getDebugInfo()">Get Debug Info</button>
+            <div id="debug-result"></div>
+        </div>
+
+        <!-- API Response Log -->
+        <div class="test-section">
+            <h3>📋 Response Log</h3>
+            <button class="btn-warning" onclick="clearLog()">Clear Log</button>
+            <pre id="response-log"></pre>
+        </div>
+    </div>
+
+    <script>
+        // Base URL for API
+        const API_BASE = '/wp-json/wnw/v1';
+        let currentUserId = null;
+
+        // Log function
+        function log(message) {
+            const logElement = document.getElementById('response-log');
+            const timestamp = new Date().toLocaleTimeString();
+            logElement.textContent += `[${timestamp}] ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('response-log').textContent = '';
+        }
+
+        // Check browser support
+        function checkBrowserSupport() {
+            const supportDiv = document.getElementById('browser-support');
+            let html = '';
+
+            if ('serviceWorker' in navigator) {
+                html += '<p class="status" style="color: green;">✓ Service Worker: Supported</p>';
+            } else {
+                html += '<p class="status" style="color: red;">✗ Service Worker: Not supported</p>';
+            }
+
+            if ('PushManager' in window) {
+                html += '<p class="status" style="color: green;">✓ Push Manager: Supported</p>';
+            } else {
+                html += '<p class="status" style="color: red;">✗ Push Manager: Not supported</p>';
+            }
+
+            if ('Notification' in window) {
+                html += '<p class="status" style="color: green;">✓ Notifications: Supported</p>';
+                html += `<p>Permission: <strong>${Notification.permission}</strong></p>`;
+            } else {
+                html += '<p class="status" style="color: red;">✗ Notifications: Not supported</p>';
+            }
+
+            supportDiv.innerHTML = html;
+        }
+
+        // Request notification permission
+        function requestNotificationPermission() {
+            if ('Notification' in window) {
+                Notification.requestPermission().then(function(permission) {
+                    log(`Permission request result: ${permission}`);
+                    checkBrowserSupport();
+                    
+                    if (permission === 'granted') {
+                        new Notification('✓ Permission Granted', {
+                            body: 'You will now receive notifications from this site',
+                            icon: '/favicon.ico'
+                        });
+                    }
+                });
+            }
+        }
+
+        // Check API status
+        async function checkAPIStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/test`);
+                const data = await response.json();
+                
+                const resultDiv = document.getElementById('api-status-result');
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <p><strong>✓ API is working!</strong></p>
+                            <p>Settings configured: ${data.settings_configured ? 'Yes' : 'No'}</p>
+                            <p>Subscribers: ${data.subscribers_count}</p>
+                            <p>WebPush class available: ${data.web_push_class_exists ? 'Yes' : 'No'}</p>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error"><p>✗ API Error: ${data.message}</p></div>`;
+                }
+                
+                log(`API Status: ${JSON.stringify(data, null, 2)}`);
+            } catch (error) {
+                document.getElementById('api-status-result').innerHTML = 
+                    `<div class="error"><p>✗ Connection Error: ${error.message}</p></div>`;
+                log(`API Error: ${error.message}`);
+            }
+        }
+
+        // Check service worker
+        async function checkServiceWorker() {
+            const resultDiv = document.getElementById('sw-status-result');
+            
+            try {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                
+                if (registrations.length > 0) {
+                    let html = '<div class="success"><p><strong>✓ Service Worker(s) found:</strong></p><ul>';
+                    registrations.forEach((reg, index) => {
+                        html += `<li>SW ${index + 1}: ${reg.scope}</li>`;
+                    });
+                    html += '</ul></div>';
+                    resultDiv.innerHTML = html;
+                    
+                    log(`Service Workers found: ${registrations.length}`);
+                } else {
+                    resultDiv.innerHTML = '<div class="warning"><p>⚠ No Service Worker registered</p></div>';
+                    log('No Service Worker found');
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error"><p>✗ Error checking SW: ${error.message}</p></div>`;
+                log(`SW Check Error: ${error.message}`);
+            }
+        }
+
+        // Send test notification to all users
+        async function sendTestNotification() {
+            const title = document.getElementById('test-title').value;
+            const message = document.getElementById('test-message').value;
+            const url = document.getElementById('test-url').value;
+            
+            const payload = {
+                title: title,
+                message: message,
+                user_ids: 'all'
+            };
+            
+            if (url) payload.url = url;
+            
+            try {
+                const response = await fetch(`${API_BASE}/send/custom`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                const resultDiv = document.getElementById('send-result');
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <p><strong>✓ Notification sent successfully!</strong></p>
+                            <p>Total: ${data.total_subscriptions}, Sent: ${data.sent}, Failed: ${data.failed}</p>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error"><p>✗ Send failed: ${data.message}</p></div>`;
+                }
+                
+                log(`Send Result: ${JSON.stringify(data, null, 2)}`);
+            } catch (error) {
+                document.getElementById('send-result').innerHTML = 
+                    `<div class="error"><p>✗ Send Error: ${error.message}</p></div>`;
+                log(`Send Error: ${error.message}`);
+            }
+        }
+
+        // Send test notification to current user
+        async function sendTestToCurrentUser() {
+            // Get current user ID first
+            if (!currentUserId) {
+                try {
+                    const userResponse = await fetch('/wp-admin/admin-ajax.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'action=get_current_user_id'
+                    });
+                    const userData = await userResponse.text();
+                    currentUserId = parseInt(userData) || 1;
+                } catch (e) {
+                    currentUserId = 1; // fallback
+                }
+            }
+            
+            const title = document.getElementById('test-title').value;
+            const message = document.getElementById('test-message').value;
+            const url = document.getElementById('test-url').value;
+            
+            const payload = {
+                user_id: currentUserId,
+                title: title,
+                message: message
+            };
+            
+            if (url) payload.url = url;
+            
+            try {
+                const response = await fetch(`${API_BASE}/send/user`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                const resultDiv = document.getElementById('send-result');
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <p><strong>✓ Notification sent to user ${currentUserId}!</strong></p>
+                            <p>Total: ${data.total_subscriptions}, Sent: ${data.sent}, Failed: ${data.failed}</p>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error"><p>✗ Send failed: ${data.message}</p></div>`;
+                }
+                
+                log(`Send to User Result: ${JSON.stringify(data, null, 2)}`);
+            } catch (error) {
+                document.getElementById('send-result').innerHTML = 
+                    `<div class="error"><p>✗ Send Error: ${error.message}</p></div>`;
+                log(`Send to User Error: ${error.message}`);
+            }
+        }
+
+        // Get debug information
+        async function getDebugInfo() {
+            try {
+                const response = await fetch(`${API_BASE}/debug`);
+                const data = await response.json();
+                
+                const resultDiv = document.getElementById('debug-result');
+                
+                if (data.success) {
+                    let html = '<div class="success"><h4>Debug Information:</h4>';
+                    html += `<p>Total active subscriptions: ${data.total_active}</p>`;
+                    html += '<h5>Recent Subscriptions:</h5><ul>';
+                    
+                    data.subscriptions.forEach(sub => {
+                        html += `<li>ID: ${sub.id}, User: ${sub.user_id}, Browser: ${sub.browser}, Status: ${sub.status}</li>`;
+                    });
+                    
+                    html += '</ul></div>';
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = `<div class="error"><p>✗ Debug Error: ${data.message}</p></div>`;
+                }
+                
+                log(`Debug Info: ${JSON.stringify(data, null, 2)}`);
+            } catch (error) {
+                document.getElementById('debug-result').innerHTML = 
+                    `<div class="error"><p>✗ Debug Error: ${error.message}</p></div>`;
+                log(`Debug Error: ${error.message}`);
+            }
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            checkBrowserSupport();
+            log('Test page loaded and ready');
+        });
+    </script>
+</body>
+</html>
