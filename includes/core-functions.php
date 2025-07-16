@@ -4,50 +4,81 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * ثبت Rewrite Rule برای Service Worker.
- * این تابع به وردپرس می‌گوید که درخواست برای /service-worker.js را به فایل واقعی در پلاگین هدایت کند.
+ * مرحله ۱: خنثی‌سازی بخش باگ‌دار افزونه رقیب (PWA)
+ * این تابع با اولویت بالا در هوک 'wp_loaded' اجرا می‌شود تا مطمئن شویم
+ * افزونه رقیب کاملاً بارگذاری شده و سپس بخش معیوب آن را حذف می‌کنیم.
  */
-add_action('init', 'wnw_add_service_worker_rewrite_rule');
-function wnw_add_service_worker_rewrite_rule() {
-    add_rewrite_rule('^service-worker\.js$', WNW_PATH . 'service-worker.js?t=532', 'top');
+add_action('wp_loaded', 'wnw_neutralize_pwa_plugin_bug', 1);
+function wnw_neutralize_pwa_plugin_bug() {
+    // فقط در فرانت‌اند اجرا شود، نه در پیشخوان
+    if (is_admin()) {
+        return;
+    }
+
+    // بررسی می‌کنیم که آیا تابع مربوط به افزونه PWA وجود دارد یا خیر
+    if (function_exists('pwa_get_instance') && isset(pwa_get_instance()->AddToHomeScreen)) {
+        // با استفاده از تابع remove_action، قلاب متصل شده توسط افزونه رقیب که باعث خطای 500 می‌شود را حذف می‌کنیم.
+        remove_action('parse_request', [pwa_get_instance()->AddToHomeScreen, 'generate_manifest']);
+    }
+}
+
+
+/**
+ * مرحله ۲: تزریق اسکریپت "کودتا" (Hijacker)
+ * این تابع با اولویت بسیار بالا در هدر سایت اجرا می‌شود تا کنترل ثبت Service Worker را به دست بگیرد.
+ */
+add_action('wp_head', 'wnw_inject_sw_hijacker_script', -9999);
+function wnw_inject_sw_hijacker_script() {
+    $sw_url = home_url('/service-worker.js?v=' . WNW_VERSION);
+    $correct_scope = trailingslashit(wp_parse_url(home_url('/'), PHP_URL_PATH));
+    $conflicting_keyword = '?pwa_serviceworker=1';
+    ?>
+    <script id="wnw-sw-hijacker">
+    (function() {
+        if (!navigator.serviceWorker) return;
+        
+        const swContainer = navigator.serviceWorker;
+        const originalRegister = swContainer.register;
+        
+        // تابع اصلی مرورگر را با نسخه سفارشی خودمان جایگزین می‌کنیم
+        swContainer.register = function(scriptURL, options) {
+            // اگر درخواست از طرف افزونه رقیب بود
+            if (scriptURL.includes('<?php echo $conflicting_keyword; ?>')) {
+                console.warn('WNW Hijacker: Competitor SW detected! Taking over.');
+                // درخواست رقیب را با درخواست خودمان جایگزین می‌کنیم
+                return originalRegister.call(swContainer, '<?php echo $sw_url; ?>', { scope: '<?php echo $correct_scope; ?>' });
+            }
+            // اگر درخواست از طرف خودمان یا افزونه دیگری بود، اجازه می‌دهیم انجام شود
+            return originalRegister.apply(swContainer, arguments);
+        };
+    })();
+    </script>
+    <?php
 }
 
 /**
- * پس از تغییر rewrite rule ها، باید آن‌ها را مجدداً بارگذاری کرد.
- * این کار را در هوک فعال‌سازی انجام می‌دهیم.
- */
-function wnw_flush_rewrite_rules_on_activate() {
-    wnw_add_service_worker_rewrite_rule();
-    flush_rewrite_rules();
-}
-// این تابع باید از هوک فعال‌سازی اصلی فراخوانی شود.
-
-/**
- * بارگذاری اسکریپت‌های لازم در فرانت‌اند سایت.
+ * مرحله ۳: بارگذاری اسکریپت اصلی برای مدیریت دکمه اشتراک.
  */
 add_action('wp_enqueue_scripts', 'wnw_enqueue_frontend_scripts');
 function wnw_enqueue_frontend_scripts() {
-    // 1. اسکریپت اصلی برای ثبت اشتراک
     wp_enqueue_script(
         'wnw-subscribe-js',
         WNW_URL . 'assets/js/wnw-subscribe.js',
-        [], // بدون وابستگی
+        [],
         WNW_VERSION,
-        true // در فوتر بارگذاری شود
+        true
     );
 
-    // 2. ارسال داده‌های لازم از PHP به JavaScript
-    $settings = get_option('wnw_settings', []);
-    $public_key = $settings['public_key'] ?? '';
+    // ساخت کد امنیتی صحیح برای جلوگیری از خطای 403
+    $wnw_data = [
+        'ajax_url'            => admin_url('admin-ajax.php'),
+        'nonce'               => wp_create_nonce('wnw_subscribe_nonce'),
+        'public_key'          => get_option('wnw_settings', [])['public_key'] ?? ''
+    ];
 
-    wp_localize_script(
+    wp_add_inline_script(
         'wnw-subscribe-js',
-        'wnw_data', // نام آبجکتی که در جاوا اسکریپت در دسترس خواهد بود
-        [
-            'ajax_url' => admin_url('admin-ajax.php'),
-            'nonce' => wp_create_nonce('wnw_subscribe_nonce'),
-            'public_key' => $public_key,
-            'is_user_logged_in' => is_user_logged_in(),
-        ]
+        'const wnw_data = ' . json_encode($wnw_data) . ';',
+        'before'
     );
 }

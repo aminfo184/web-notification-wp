@@ -5,7 +5,6 @@ if (!defined('ABSPATH')) {
 
 /**
  * این تابع جداول مورد نیاز پلاگین را در دیتابیس ایجاد می‌کند.
- * از dbDelta برای ایجاد و به‌روزرسانی امن جداول استفاده می‌شود.
  */
 function wnw_create_tables() {
     global $wpdb;
@@ -14,7 +13,7 @@ function wnw_create_tables() {
 
     $prefix = $wpdb->prefix . 'wn_';
 
-    // جدول 1: wn_notifications (برای ذخیره قالب‌های نوتیفیکیشن)
+    // جدول ۱: wn_notifications (برای ذخیره قالب‌های نوتیفیکیشن)
     $sql_notifications = "
     CREATE TABLE {$prefix}notifications (
         id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -30,7 +29,7 @@ function wnw_create_tables() {
         PRIMARY KEY (id)
     ) $charset_collate;";
 
-    // جدول 2: wn_subscriptions (برای مدیریت اشتراک‌های کاربران)
+    // جدول ۲: wn_subscriptions (برای مدیریت اشتراک‌های کاربران)
     $sql_subscriptions = "
     CREATE TABLE {$prefix}subscriptions (
         id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -51,7 +50,7 @@ function wnw_create_tables() {
         KEY guest_token_idx (guest_token)
     ) $charset_collate;";
 
-    // جدول 3: wn_queue (برای صف ارسال و گزارش‌گیری)
+    // جدول ۳: wn_queue (برای صف ارسال و گزارش‌گیری)
     $sql_queue = "
     CREATE TABLE {$prefix}queue (
         id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -67,7 +66,6 @@ function wnw_create_tables() {
         KEY status_schedule_idx (status, scheduled_for),
         KEY notification_id_idx (notification_id),
         KEY subscription_id_idx (subscription_id)
-        -- Foreign keys are not added via dbDelta, but are good for reference.
     ) $charset_collate;";
 
     // اجرای کوئری‌ها

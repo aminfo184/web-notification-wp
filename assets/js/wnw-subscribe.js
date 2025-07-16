@@ -1,132 +1,104 @@
-/**
- * Frontend script to handle user subscription process.
- */
-document.addEventListener("DOMContentLoaded", function () {
-  const subscribeButton = document.getElementById("wnw-subscribe-button");
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('WNW Debug: Script loaded and DOM is ready.');
 
-  if (!subscribeButton) {
-    return;
-  }
+    if (typeof wnw_data === 'undefined') {
+        console.error('WNW Debug: FATAL - wnw_data object not found. The script cannot continue.');
+        return;
+    }
+    console.log('WNW Debug: wnw_data object found successfully.', wnw_data);
 
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-    console.warn("WNW: Push messaging is not supported.");
-    subscribeButton.disabled = true;
-    return;
-  }
+    const subscribeButton = document.getElementById('wnw-subscribe-button');
+    if (!subscribeButton) {
+        console.error('WNW Debug: FATAL - Subscribe button with id "wnw-subscribe-button" not found in the page.');
+        return;
+    }
+    console.log('WNW Debug: Subscribe button found successfully.');
 
-  // FIX: Add a dynamic cache-busting query parameter to the service worker URL.
-  const serviceWorkerUrl = `/service-worker.js?v=${
-    wnw_data.version || new Date().getTime()
-  }`;
-
-  navigator.serviceWorker
-    .register(serviceWorkerUrl)
-    .then(function (swReg) {
-      console.log("WNW: Service Worker is registered successfully.", swReg);
-      subscribeButton.disabled = false;
-    })
-    .catch(function (error) {
-      console.error("WNW: Service Worker registration failed:", error);
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        console.warn('WNW Debug: Push messaging is not supported in this browser.');
+        subscribeButton.disabled = true;
+        return;
+    }
+    
+    subscribeButton.disabled = false;
+    console.log('WNW Debug: Push is supported. Button is enabled.');
+    
+    // منتظر کلیک کاربر می‌ماند
+    subscribeButton.addEventListener('click', () => {
+        console.log('WNW Debug: Subscribe button CLICKED!');
+        subscribeUser();
     });
+    console.log('WNW Debug: Click listener attached to the subscribe button.');
 
-  subscribeButton.addEventListener("click", function () {
-    subscribeUser();
-  });
-
-  function subscribeUser() {
-    const applicationServerKey = urlBase64ToUint8Array(wnw_data.public_key);
-
-    navigator.serviceWorker.ready.then(function (swReg) {
-      swReg.pushManager
-        .subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: applicationServerKey,
-        })
-        .then(function (subscription) {
-          console.log("WNW: User is subscribed:", subscription);
-          sendSubscriptionToServer(subscription);
-        })
-        .catch(function (err) {
-          console.error("WNW: Failed to subscribe the user:", err);
-          alert(
-            "خطا در فعال‌سازی نوتیفیکیشن. لطفاً مطمئن شوید اجازه نمایش نوتیفیکیشن را به سایت داده‌اید."
-          );
+    function subscribeUser(){
+        console.log('WNW Debug: subscribeUser() function called.');
+        navigator.serviceWorker.ready.then(swReg => {
+            console.log('WNW Debug: Service Worker is ready. Registration object:', swReg);
+            
+            // بررسی می‌کنیم که کنترلر فعال، Service Worker ما باشد
+            if (swReg.active && swReg.active.scriptURL.includes('service-worker.js')) {
+                console.log('WNW Debug: Our Service Worker is active. Proceeding to get subscription.');
+                swReg.pushManager.getSubscription().then(sub => {
+                    if(sub){
+                        console.log('WNW Debug: Existing subscription found. Unsubscribing first...');
+                        sub.unsubscribe().then(() => {
+                            console.log('WNW Debug: Unsubscribed successfully. Proceeding with new subscription.');
+                            proceedWithSubscription(swReg);
+                        });
+                    } else {
+                        console.log('WNW Debug: No existing subscription. Proceeding with new subscription.');
+                        proceedWithSubscription(swReg);
+                    }
+                });
+            } else {
+                console.error("WNW Debug: Could not get our Service Worker's registration. It may be controlled by another plugin or not active yet.");
+                alert("خطا در آماده‌سازی سرویس نوتیفیکیشن. لطفاً صفحه را رفرش کرده و دوباره تلاش کنید.");
+            }
         });
-    });
-  }
-
-  function sendSubscriptionToServer(subscription) {
-    let guestToken = getCookie("wnw_guest_token");
-    if (!guestToken && !wnw_data.is_user_logged_in) {
-      guestToken = generateToken(32);
-      setCookie("wnw_guest_token", guestToken, 365);
     }
 
-    const formData = new FormData();
-    formData.append("action", "wnw_save_subscription");
-    formData.append("nonce", wnw_data.nonce);
-    formData.append("subscription", JSON.stringify(subscription));
-    if (guestToken) {
-      formData.append("guest_token", guestToken);
-    }
-
-    fetch(wnw_data.ajax_url, {
-      method: "POST",
-      body: formData,
-    })
-      .then((response) => response.json())
-      .then((data) => {
-        if (data.success) {
-          alert("نوتیفیکیشن با موفقیت فعال شد!");
-        } else {
-          console.error("WNW: Failed to save subscription.", data.data.message);
+    function proceedWithSubscription(swReg){
+        console.log('WNW Debug: proceedWithSubscription() called.');
+        if (!wnw_data.public_key) {
+            console.error('WNW Debug: VAPID public key is missing.');
+            alert('خطای پیکربندی: کلید عمومی نوتیفیکیشن تنظیم نشده است.');
+            return;
         }
-      })
-      .catch((error) => {
-        console.error("WNW: Error sending subscription to server.", error);
-      });
-  }
 
-  // --- Helper Functions ---
-  function urlBase64ToUint8Array(base64String) {
-    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-    const base64 = (base64String + padding)
-      .replace(/-/g, "+")
-      .replace(/_/g, "/");
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
+        const appKey = urlBase64ToUint8Array(wnw_data.public_key);
+        swReg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:appKey})
+            .then(sub => {
+                console.log('WNW Debug: Browser subscription successful. Sending to server...');
+                sendSubscriptionToServer(sub);
+            })
+            .catch(err => {
+                console.error('WNW Debug: Failed to subscribe the user:', err);
+                alert('خطا در فعال‌سازی نوتیفیکیشن. لطفاً مطمئن شوید اجازه نمایش نوتیفیکیشن را به سایت داده‌اید.');
+            });
     }
-    return outputArray;
-  }
 
-  function getCookie(name) {
-    const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) return parts.pop().split(";").shift();
-  }
+    function sendSubscriptionToServer(sub){
+        console.log('WNW Debug: sendSubscriptionToServer() called. Sending subscription to WordPress.');
+        const formData = new FormData();
+        formData.append('action', 'wnw_save_subscription');
+        formData.append('nonce', wnw_data.nonce);
+        formData.append('subscription', JSON.stringify(sub));
 
-  function setCookie(name, value, days) {
-    let expires = "";
-    if (days) {
-      const date = new Date();
-      date.setTime(date.getTime() + days * 24 * 60 * 60 * 1000);
-      expires = "; expires=" + date.toUTCString();
+        fetch(wnw_data.ajax_url, {method:'POST', body:formData})
+            .then(res => {
+                if (!res.ok) throw new Error(`Network response was not ok, status: ${res.status}`);
+                return res.json();
+            })
+            .then(data => {
+                if(data.success) {
+                    console.log('WNW Debug: Server successfully saved the subscription.');
+                    alert('نوتیفیکیشن با موفقیت فعال شد!');
+                } else {
+                     console.error('WNW Debug: Subscription save failed on server.', data.data);
+                }
+            })
+            .catch(err => console.error('WNW Debug: Fetch error while saving subscription.', err));
     }
-    document.cookie = `${name}=${value || ""}${expires}; path=/`;
-  }
 
-  function generateToken(length) {
-    const a =
-      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890".split(
-        ""
-      );
-    const b = [];
-    for (let i = 0; i < length; i++) {
-      let j = (Math.random() * (a.length - 1)).toFixed(0);
-      b[i] = a[j];
-    }
-    return b.join("");
-  }
+    function urlBase64ToUint8Array(base64String){const padding='='.repeat((4-base64String.length%4)%4);const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');const rawData=window.atob(base64);const outputArray=new Uint8Array(rawData.length);for(let i=0;i<rawData.length;++i){outputArray[i]=rawData.charCodeAt(i);}return outputArray;}
 });

@@ -1,67 +1,43 @@
 /**
  * Service Worker for Web Notification WP
- * Handles push events and notification clicks.
+ * This code will be injected into the PWA's service worker.
  */
 
 self.addEventListener('push', function(event) {
-  // اطلاعات پیش‌فرض در صورتی که پیامی از سرور نیاید
-  let payload = {
-    title: 'پیام جدید',
-    body: 'شما یک پیام جدید دارید.',
-    icon: '/favicon.ico', // یک آیکون پیش‌فرض
-    url: self.location.origin,
-  };
-
-  // تلاش برای خواندن اطلاعات ارسال شده از سرور
-  if (event.data) {
+    // فقط پیام‌هایی را پردازش می‌کنیم که از سرور ما آمده و فرمت JSON صحیح دارند
     try {
-      payload = event.data.json();
+        const payload = event.data.json();
+        
+        // بررسی می‌کنیم که آیا پیام شامل فیلدهای مورد انتظار ما هست یا خیر
+        if ('title' in payload && 'body' in payload) {
+            console.log('WNW: [Service Worker] Push Received from our system.');
+
+            const title = payload.title;
+            const options = {
+                body: payload.body,
+                icon: payload.icon,
+                image: payload.image,
+                data: {
+                    url: payload.url,
+                },
+            };
+
+            event.waitUntil(self.registration.showNotification(title, options));
+        }
     } catch (e) {
-      console.error('WNW Error: Could not parse push data.', e);
+        // این پیام‌ها برای ما نیستند، آنها را نادیده می‌گیریم
+        console.log('WNW: [Service Worker] Push received, but not in our format. Ignoring.');
     }
-  }
-
-  // تعریف گزینه‌های نوتیفیکیشن
-  const options = {
-    body: payload.body,
-    icon: payload.icon, // آیکون داینامیک
-    data: {
-      url: payload.url, // آدرس داینامیک
-    },
-    // می‌توانیم گزینه‌های دیگری مثل تصویر بزرگ (image) یا دکمه‌های اکشن (actions) را هم اضافه کنیم
-    // image: payload.image, 
-  };
-
-  // نمایش نوتیفیکیشن
-  event.waitUntil(
-    self.registration.showNotification(payload.title, options)
-  );
 });
 
 self.addEventListener('notificationclick', function(event) {
-  // بستن نوتیفیکیشن پس از کلیک
-  event.notification.close();
-
-  // دریافت آدرس URL از داده‌های نوتیفیکیشن
-  const urlToOpen = event.notification.data.url;
-
-  // باز کردن پنجره یا تب جدید با آدرس مورد نظر
-  event.waitUntil(
-    clients.matchAll({
-      type: 'window',
-      includeUncontrolled: true
-    }).then(function(clientList) {
-      // اگر تبی با همین آدرس باز بود، آن را focus کن
-      for (let i = 0; i < clientList.length; i++) {
-        const client = clientList[i];
-        if (client.url === urlToOpen && 'focus' in client) {
-          return client.focus();
+    // فقط روی نوتیفیکیشن‌هایی کلیک می‌کنیم که داده‌های ما را دارند
+    if (event.notification.data && 'url' in event.notification.data) {
+        console.log('WNW: [Service Worker] Notification clicked.');
+        event.notification.close();
+        const urlToOpen = event.notification.data.url;
+        if (urlToOpen) {
+            event.waitUntil(clients.openWindow(urlToOpen));
         }
-      }
-      // در غیر این صورت، یک تب جدید باز کن
-      if (clients.openWindow) {
-        return clients.openWindow(urlToOpen);
-      }
-    })
-  );
+    }
 });

@@ -16,8 +16,7 @@ add_action('wnw_process_queue_hook', 'wnw_spawn_runner');
  * Triggers the background sending process using a non-blocking request.
  * This ensures the admin or user doesn't have to wait.
  */
-function wnw_spawn_runner()
-{
+function wnw_spawn_runner() {
     // Check if a process is already locked to avoid multiple simultaneous runs.
     if (get_transient('wnw_sender_lock')) {
         return;
@@ -42,8 +41,7 @@ function wnw_spawn_runner()
 add_action('wp_ajax_nopriv_wnw_run_sender', 'wnw_run_sender_callback');
 add_action('wp_ajax_wnw_run_sender', 'wnw_run_sender_callback');
 
-function wnw_run_sender_callback()
-{
+function wnw_run_sender_callback() {
     check_ajax_referer('wnw_sender_nonce', '_wnw_nonce');
 
     // Lock the process to prevent multiple instances from running.
@@ -57,7 +55,7 @@ function wnw_run_sender_callback()
 
     // Unlock the process once done.
     delete_transient('wnw_sender_lock');
-
+    
     wp_die('Background process finished.');
 }
 
@@ -66,8 +64,7 @@ function wnw_run_sender_callback()
  * Processes the notification queue continuously until it's empty.
  * This is the new, optimized core of the sending engine.
  */
-function wnw_process_notification_queue()
-{
+function wnw_process_notification_queue() {
     global $wpdb;
     $queue_table = $wpdb->prefix . 'wn_queue';
     $subs_table = $wpdb->prefix . 'wn_subscriptions';
@@ -75,14 +72,14 @@ function wnw_process_notification_queue()
 
     $settings = get_option('wnw_settings', []);
     $batch_size = !empty($settings['batch_size']) ? absint($settings['batch_size']) : 100;
-
+    
     // Prepare WebPush object once
     $auth = ['VAPID' => ['subject' => $settings['email'] ?? '', 'publicKey' => $settings['public_key'] ?? '', 'privateKey' => $settings['private_key'] ?? '']];
     if (empty($auth['VAPID']['publicKey']) || empty($auth['VAPID']['privateKey'])) {
         // Log error and stop if keys are not set.
         return;
     }
-
+    
     $webPush = new WebPush($auth);
     $webPush->setReuseVAPIDHeaders(true); // Performance optimization
 
@@ -90,8 +87,7 @@ function wnw_process_notification_queue()
     while (true) {
         $items_to_process = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$queue_table} WHERE status = 'queued' AND scheduled_for <= %s ORDER BY id ASC LIMIT %d",
-            current_time('mysql', 1),
-            $batch_size
+            current_time('mysql', 1), $batch_size
         ));
 
         if (empty($items_to_process)) {
@@ -106,7 +102,7 @@ function wnw_process_notification_queue()
         // --- OPTIMIZATION: Fetch all required data in bulk ---
         $notification_ids = array_unique(wp_list_pluck($items_to_process, 'notification_id'));
         $subscription_ids = array_unique(wp_list_pluck($items_to_process, 'subscription_id'));
-
+        
         $notifications = $wpdb->get_results("SELECT * FROM {$notif_table} WHERE id IN (" . implode(',', $notification_ids) . ")", OBJECT_K);
         $subscriptions = $wpdb->get_results("SELECT * FROM {$subs_table} WHERE id IN (" . implode(',', $subscription_ids) . ")", OBJECT_K);
         // --- END OPTIMIZATION ---
@@ -144,9 +140,9 @@ function wnw_process_notification_queue()
         foreach ($reports as $report) {
             $endpoint = $report->getEndpoint();
             $queue_item = null;
-
+            
             // Find the queue item that corresponds to this report
-            foreach ($items_to_process as $item) {
+            foreach($items_to_process as $item) {
                 if (isset($subscriptions[$item->subscription_id]) && $subscriptions[$item->subscription_id]->endpoint === $endpoint) {
                     $queue_item = $item;
                     break;
